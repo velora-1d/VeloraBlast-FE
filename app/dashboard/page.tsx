@@ -14,8 +14,50 @@ import clsx from "clsx";
 const API_URL = "http://localhost:8000";
 const OWNER_EMAIL = "nawawimahinutsman@gmail.com";
 
+// Types & Interfaces
+interface User {
+    id: number;
+    email: string;
+    subscription_status: string;
+    role: string;
+}
+
+interface Lead {
+    id: number;
+    phone: string;
+    status: string;
+    business_name?: string;
+    name?: string;
+    source?: string;
+}
+
+interface Template {
+    id: number;
+    name: string;
+    content: string;
+}
+
+interface Config {
+    search_phrase: string;
+}
+
+interface StatsCardProps {
+    title: string;
+    value: string | number;
+    icon: any;
+    color: string;
+}
+
+interface NavItemProps {
+    icon: any;
+    label: string;
+    active: boolean;
+    onClick: () => void;
+    color?: string;
+}
+
 // Helper Components
-function StatsCard({ title, value, icon: Icon, color }: any) {
+function StatsCard({ title, value, icon: Icon, color }: StatsCardProps) {
     return (
         <div className="bg-slate-900/50 backdrop-blur-xl border border-white/5 p-6 rounded-3xl flex items-center gap-4 hover:border-white/10 transition-colors">
             <div className={clsx("p-3 rounded-2xl shadow-lg", color)}>
@@ -29,7 +71,7 @@ function StatsCard({ title, value, icon: Icon, color }: any) {
     );
 }
 
-function SubscriptionBanner({ status, onUpgrade }: any) {
+function SubscriptionBanner({ status, onUpgrade }: { status: string; onUpgrade: () => void }) {
     if (status === "active") return null;
     return (
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 rounded-[2.5rem] mb-8 flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl shadow-blue-600/20 animate-in slide-in-from-top duration-500">
@@ -49,7 +91,7 @@ function SubscriptionBanner({ status, onUpgrade }: any) {
     );
 }
 
-function FeatureLock({ user, onUpgrade, children }: { user: any; onUpgrade: () => void; children: React.ReactNode }) {
+function FeatureLock({ user, onUpgrade, children }: { user: User | null; onUpgrade: () => void; children: React.ReactNode }) {
     const isActive = user?.subscription_status === "active" || user?.email === OWNER_EMAIL || user?.role === "admin";
     if (isActive) return <>{children}</>;
     return (
@@ -67,7 +109,7 @@ function FeatureLock({ user, onUpgrade, children }: { user: any; onUpgrade: () =
     );
 }
 
-function NavItem({ icon: Icon, label, active, onClick, color }: any) {
+function NavItem({ icon: Icon, label, active, onClick, color }: NavItemProps) {
     return (
         <button
             onClick={onClick}
@@ -86,14 +128,14 @@ function NavItem({ icon: Icon, label, active, onClick, color }: any) {
 
 export default function Dashboard() {
     const router = useRouter();
-    const [user, setUser] = useState<any>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("dashboard");
     const [status, setStatus] = useState("stopped");
     const [logs, setLogs] = useState("");
-    const [config, setConfig] = useState<any>(null);
-    const [leads, setLeads] = useState<any[]>([]);
-    const [templates, setTemplates] = useState<any[]>([]);
+    const [config, setConfig] = useState<Config | null>(null);
+    const [leads, setLeads] = useState<Lead[]>([]);
+    const [templates, setTemplates] = useState<Template[]>([]);
     const [target, setTarget] = useState("verified");
     const [results, setResults] = useState<any[]>([]);
     const [whatsappSessions, setWhatsappSessions] = useState<any[]>([]);
@@ -120,14 +162,14 @@ export default function Dashboard() {
 
     // API Client
     const api = axios.create({ baseURL: API_URL, timeout: 10000 });
-    api.interceptors.request.use(cfg => {
+    api.interceptors.request.use((cfg: any) => {
         const token = typeof window !== 'undefined' ? localStorage.getItem("velora_token") : null;
-        if (token) cfg.headers.Authorization = `Bearer ${token}`;
+        if (token && cfg.headers) cfg.headers.Authorization = `Bearer ${token}`;
         return cfg;
     });
     api.interceptors.response.use(
-        res => res,
-        err => {
+        (res: any) => res,
+        (err: any) => {
             if (err.response?.status === 401) {
                 if (typeof window !== 'undefined') localStorage.removeItem("velora_token");
                 router.push("/login");
@@ -279,7 +321,7 @@ export default function Dashboard() {
                     )}
                 </header>
 
-                <SubscriptionBanner status={user?.subscription_status} onUpgrade={handleUpgrade} />
+                <SubscriptionBanner status={user?.subscription_status || "inactive"} onUpgrade={handleUpgrade} />
 
                 {/* Dashboard Tab */}
                 {activeTab === 'dashboard' && (
@@ -327,7 +369,7 @@ export default function Dashboard() {
                         <table className="w-full text-left">
                             <thead><tr className="border-b border-white/5 bg-white/5"><th className="p-4 text-xs font-bold text-slate-500">Phone</th><th className="p-4 text-xs font-bold text-slate-500">Status</th><th className="p-4 text-xs font-bold text-slate-500">Name</th></tr></thead>
                             <tbody>
-                                {leads.map((l: any) => <tr key={l.id} className="border-b border-white/5"><td className="p-4 text-white font-mono">{l.phone}</td><td className="p-4"><span className={clsx("px-2 py-1 rounded text-xs", l.status === 'WA Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500')}>{l.status}</span></td><td className="p-4 text-slate-400">{l.business_name || l.name || '-'}</td></tr>)}
+                                {leads.map((l: Lead) => <tr key={l.id} className="border-b border-white/5"><td className="p-4 text-white font-mono">{l.phone}</td><td className="p-4"><span className={clsx("px-2 py-1 rounded text-xs", l.status === 'WA Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500')}>{l.status}</span></td><td className="p-4 text-slate-400">{l.business_name || l.name || '-'}</td></tr>)}
                                 {leads.length === 0 && <tr><td colSpan={3} className="p-20 text-center opacity-20">No data</td></tr>}
                             </tbody>
                         </table>
@@ -340,8 +382,8 @@ export default function Dashboard() {
                         <div className="p-6 border-b border-white/5 bg-emerald-500/5 flex justify-between items-center">
                             <h3 className="text-xl font-bold text-emerald-400">WA Active Only</h3>
                             <button onClick={() => {
-                                const activeLeads = leads.filter((l: any) => l.status === 'WA Active');
-                                const csv = 'phone,name,business_name,source\n' + activeLeads.map((l: any) => `${l.phone},${l.name || '-'},${l.business_name || '-'},${l.source}`).join('\n');
+                                const activeLeads = leads.filter((l: Lead) => l.status === 'WA Active');
+                                const csv = 'phone,name,business_name,source\n' + activeLeads.map((l: Lead) => `${l.phone},${l.name || '-'},${l.business_name || '-'},${l.source}`).join('\n');
                                 const blob = new Blob([csv], { type: 'text/csv' });
                                 const url = URL.createObjectURL(blob);
                                 const a = document.createElement('a'); a.href = url; a.download = 'wa_active_leads.csv'; a.click();
@@ -350,8 +392,8 @@ export default function Dashboard() {
                         <table className="w-full text-left">
                             <thead><tr className="border-b border-white/5"><th className="p-4 text-xs font-bold text-emerald-500">Phone</th><th className="p-4 text-xs font-bold text-emerald-500">Name</th><th className="p-4 text-xs font-bold text-emerald-500">Source</th></tr></thead>
                             <tbody>
-                                {leads.filter((l: any) => l.status === 'WA Active').map((l: any) => <tr key={l.id} className="border-b border-white/5"><td className="p-4 text-white font-mono">{l.phone}</td><td className="p-4 text-slate-400">{l.business_name || l.name || '-'}</td><td className="p-4 text-xs text-blue-400">{l.source}</td></tr>)}
-                                {leads.filter((l: any) => l.status === 'WA Active').length === 0 && <tr><td colSpan={3} className="p-20 text-center opacity-20">Belum ada nomor WA terverifikasi aktif.</td></tr>}
+                                {leads.filter((l: Lead) => l.status === 'WA Active').map((l: Lead) => <tr key={l.id} className="border-b border-white/5"><td className="p-4 text-white font-mono">{l.phone}</td><td className="p-4 text-slate-400">{l.business_name || l.name || '-'}</td><td className="p-4 text-xs text-blue-400">{l.source}</td></tr>)}
+                                {leads.filter((l: Lead) => l.status === 'WA Active').length === 0 && <tr><td colSpan={3} className="p-20 text-center opacity-20">Belum ada nomor WA terverifikasi aktif.</td></tr>}
                             </tbody>
                         </table>
                     </div>
@@ -405,7 +447,7 @@ export default function Dashboard() {
                                     <button onClick={() => setShowTemplateModal(true)} className="text-xs text-indigo-400">+ New</button>
                                 </div>
                                 <div className="space-y-3 max-h-80 overflow-y-auto">
-                                    {templates.map((t: any) => (
+                                    {templates.map((t: Template) => (
                                         <div key={t.id} className="p-4 bg-white/5 rounded-xl group relative">
                                             <div className="flex justify-between"><h4 className="font-bold text-white text-sm">{t.name}</h4>
                                                 <div className="flex gap-2 opacity-0 group-hover:opacity-100">
