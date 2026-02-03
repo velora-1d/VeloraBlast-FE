@@ -7,11 +7,12 @@ import {
     Play, Square, Settings, FileText, Database, Terminal, RefreshCw, Upload,
     Camera, Table, Download, CheckCircle, MonitorPlay, Trash2, Loader2,
     AlertCircle, X, Plus, Pencil, LogOut, CreditCard, MessageSquare,
-    ShieldCheck, Zap, BarChart3, Users, FolderOpen, Smartphone, QrCode
+    ShieldCheck, Zap, BarChart3, Users, FolderOpen, Smartphone, QrCode,
+    LayoutList, Activity, Send
 } from "lucide-react";
 import clsx from "clsx";
 
-const API_URL = "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const OWNER_EMAIL = "nawawimahinutsman@gmail.com";
 
 // Types & Interfaces
@@ -137,6 +138,9 @@ export default function Dashboard() {
     const [leads, setLeads] = useState<Lead[]>([]);
     const [templates, setTemplates] = useState<Template[]>([]);
     const [target, setTarget] = useState("verified");
+    const [broadcastTemplate, setBroadcastTemplate] = useState("");
+    const [broadcastTarget, setBroadcastTarget] = useState("verified");
+    const [broadcastStatus, setBroadcastStatus] = useState<any>({ status: 'idle', logs: [], progress: 0, sent: 0, failed: 0, total: 0 });
     const [results, setResults] = useState<any[]>([]);
     const [whatsappSessions, setWhatsappSessions] = useState<any[]>([]);
     const [whatsappLimit, setWhatsappLimit] = useState(0);
@@ -147,13 +151,20 @@ export default function Dashboard() {
     const [showSessionModal, setShowSessionModal] = useState(false);
     const [showTemplateModal, setShowTemplateModal] = useState(false);
     const [newSessionName, setNewSessionName] = useState("");
+    const [noticeModal, setNoticeModal] = useState({ show: false, message: '', type: 'info' });
+    const [confirmModal, setConfirmModal] = useState<any>({ show: false, message: '', onConfirm: () => { } });
     const [inputTemplateName, setInputTemplateName] = useState("");
     const [inputTemplateContent, setInputTemplateContent] = useState("");
     const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null);
 
     // UI State
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-    const [confirmModal, setConfirmModal] = useState<{ show: boolean; message: string; onConfirm: () => void } | null>(null);
+
+    // Feature: Test Send & Preview
+    const [testPhone, setTestPhone] = useState("");
+    const [showPreviewModal, setShowPreviewModal] = useState(false);
+    const [previewData, setPreviewData] = useState<any>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
 
     const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
         setToast({ message, type });
@@ -189,6 +200,20 @@ export default function Dashboard() {
     const fetchConfig = async () => { try { const { data } = await api.get("/config"); setConfig(data); } catch { } };
     const fetchWhatsappSessions = async () => {
         try { const { data } = await api.get("/whatsapp/sessions"); if (data) { setWhatsappSessions(data.sessions || []); setWhatsappLimit(data.max_senders || 0); } } catch { }
+    };
+    const fetchPreview = async (path: string) => {
+        setPreviewLoading(true);
+        setPreviewData(null);
+        setShowPreviewModal(true);
+        try {
+            const { data } = await api.get(`/results/content?path=${encodeURIComponent(path)}`);
+            setPreviewData(data);
+        } catch (err: any) {
+            showToast(err.response?.data?.detail || "Gagal load preview", "error");
+            setShowPreviewModal(false);
+        } finally {
+            setPreviewLoading(false);
+        }
     };
 
     useEffect(() => { fetchUser(); fetchConfig(); fetchLeads(); fetchTemplates(); fetchWhatsappSessions(); }, []);
@@ -232,10 +257,40 @@ export default function Dashboard() {
 
     useEffect(() => {
         const interval = setInterval(async () => {
-            try { const [s, l] = await Promise.all([api.get("/status"), api.get("/logs")]); setStatus(s.data.status); setLogs(l.data.logs); } catch { }
+            try {
+                const [s, l] = await Promise.all([api.get("/status"), api.get("/logs")]);
+                setStatus(s.data.status);
+                setLogs(l.data.logs);
+
+                // Auto-scroll logic
+                const container = document.getElementById('log-container');
+                if (container) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            } catch { }
         }, 3000);
         return () => clearInterval(interval);
     }, []);
+
+    // Auto-scroll for broadcast logs
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (activeTab === 'broadcast' || broadcastStatus.status === 'running') {
+            interval = setInterval(async () => {
+                try {
+                    const res = await api.get("/broadcast/status");
+                    setBroadcastStatus(res.data);
+
+                    // Auto-scroll for broadcast logs
+                    const container = document.getElementById('broadcast-log-container');
+                    if (container) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                } catch { }
+            }, 2000);
+        }
+        return () => clearInterval(interval);
+    }, [activeTab, broadcastStatus.status]);
 
     const handleUpgrade = async () => {
         try {
@@ -333,10 +388,34 @@ export default function Dashboard() {
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             <div className="lg:col-span-2 bg-slate-900/50 border border-white/5 rounded-3xl p-8">
-                                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Terminal className="text-blue-500 w-5 h-5" /> Logs</h3>
-                                <div className="bg-black/40 rounded-2xl p-6 font-mono text-xs text-slate-400 h-80 overflow-y-auto border border-white/5">
-                                    {logs.split('\n').map((line, i) => <div key={i} className="mb-1">{line}</div>)}
-                                    {!logs && <p className="opacity-30 italic">Waiting...</p>}
+                                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                    <Terminal className="text-blue-500 w-5 h-5" /> Logs
+                                    {status === 'running' && <span className="flex h-2 w-2 relative ml-1"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span></span>}
+                                </h3>
+                                <div
+                                    id="log-container"
+                                    className="bg-black/40 rounded-2xl p-6 font-mono text-[10px] md:text-xs text-slate-400 h-80 overflow-y-auto border border-white/5 scroll-smooth"
+                                >
+                                    {logs.split('\n').map((line, i) => {
+                                        if (!line.trim()) return null;
+                                        const isSuccess = /SUCCESS|DONE|OK|✅|Sent to/i.test(line);
+                                        const isError = /ERROR|FAILED|❌|Critical/i.test(line);
+                                        const isWarning = /WARNING|⚠️|WAITING|COOLDOWN|☕/i.test(line);
+                                        return (
+                                            <div key={i} className={clsx(
+                                                "mb-1 border-l-2 pl-3 py-0.5",
+                                                isSuccess ? "text-emerald-400 border-emerald-500/50 bg-emerald-500/5" :
+                                                    isError ? "text-red-400 border-red-500/50 bg-red-500/5" :
+                                                        isWarning ? "text-amber-400 border-amber-500/50 bg-amber-500/5" :
+                                                            "text-slate-400 border-white/5"
+                                            )}>
+                                                <span className="opacity-30 mr-2">[{new Date().toLocaleTimeString([], { hour12: false })}]</span>
+                                                {line}
+                                            </div>
+                                        );
+                                    })}
+                                    {!logs && <p className="opacity-30 italic flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Menunggu log sistem...</p>}
+                                    <div id="log-end"></div>
                                 </div>
                             </div>
                             <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-8">
@@ -370,7 +449,25 @@ export default function Dashboard() {
                             <thead><tr className="border-b border-white/5 bg-white/5"><th className="p-4 text-xs font-bold text-slate-500">Phone</th><th className="p-4 text-xs font-bold text-slate-500">Status</th><th className="p-4 text-xs font-bold text-slate-500">Name</th></tr></thead>
                             <tbody>
                                 {leads.map((l: Lead) => <tr key={l.id} className="border-b border-white/5"><td className="p-4 text-white font-mono">{l.phone}</td><td className="p-4"><span className={clsx("px-2 py-1 rounded text-xs", l.status === 'WA Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500')}>{l.status}</span></td><td className="p-4 text-slate-400">{l.business_name || l.name || '-'}</td></tr>)}
-                                {leads.length === 0 && <tr><td colSpan={3} className="p-20 text-center opacity-20">No data</td></tr>}
+                                {leads.length === 0 && (
+                                    <tr>
+                                        <td colSpan={3} className="p-24 text-center">
+                                            <div className="flex flex-col items-center gap-6 max-w-sm mx-auto">
+                                                <div className="w-20 h-20 bg-slate-800/50 rounded-[2rem] flex items-center justify-center border border-white/5 shadow-2xl">
+                                                    <Users className="w-10 h-10 text-slate-600" />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <h4 className="text-xl font-bold text-white tracking-tight">Belum Ada Data Leads</h4>
+                                                    <p className="text-sm text-slate-500">Mulai jalankan Scraper untuk mencari data target atau upload via fitur OCR.</p>
+                                                </div>
+                                                <div className="flex gap-4">
+                                                    <button onClick={() => setActiveTab('dashboard')} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-xl shadow-blue-600/20 hover:scale-105 transition-transform">Mulai Scraping</button>
+                                                    <button onClick={() => setActiveTab('ocr')} className="bg-white/5 text-white border border-white/5 px-6 py-3 rounded-xl font-bold text-sm hover:bg-white/10 transition-colors">Gunakan OCR</button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -428,44 +525,258 @@ export default function Dashboard() {
                                 <h3 className="text-xl font-bold text-white flex items-center gap-2"><QrCode className="text-green-500 w-5 h-5" /> WhatsApp Sessions</h3>
                                 {whatsappSessions.length < whatsappLimit && <button onClick={() => setShowSessionModal(true)} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2"><Plus className="w-3 h-3" /> Connect</button>}
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                {whatsappSessions.map((s: any) => (
-                                    <div key={s.name} className="bg-slate-800/50 border border-white/5 rounded-2xl p-4 flex justify-between items-center">
-                                        <div className="flex items-center gap-3">
-                                            <Smartphone className="w-5 h-5 text-green-500" />
-                                            <div><p className="text-sm font-bold text-white">{s.name.split('_').slice(1).join('_')}</p><p className="text-[10px] text-slate-400">{s.status}</p></div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {whatsappSessions.map((s: any) => {
+                                    const isConnected = s.status?.toLowerCase() === 'open' || s.status?.toLowerCase() === 'connected';
+                                    const isConnecting = s.status?.toLowerCase() === 'connecting' || s.status?.toLowerCase() === 'initializing';
+
+                                    return (
+                                        <div key={s.name} className="bg-slate-800/20 backdrop-blur-md border border-white/5 rounded-2xl p-5 flex flex-col gap-4 hover:border-white/10 transition-all group relative overflow-hidden">
+                                            {isConnecting && <div className="absolute top-0 left-0 w-full h-0.5 bg-blue-500/30 overflow-hidden"><div className="w-1/2 h-full bg-blue-500 animate-[loading_1s_infinite_linear]"></div></div>}
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={clsx(
+                                                        "w-10 h-10 rounded-xl flex items-center justify-center shadow-inner",
+                                                        isConnected ? "bg-emerald-500/10 text-emerald-500" : "bg-slate-800 text-slate-500"
+                                                    )}>
+                                                        <Smartphone className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-black text-white tracking-tight">{s.name.split('_').slice(1).join('_')}</p>
+                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                            <div className={clsx("w-1.5 h-1.5 rounded-full", isConnected ? "bg-emerald-500 animate-pulse" : "bg-slate-600")}></div>
+                                                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{s.status}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {!isConnected && (
+                                                        <button
+                                                            onClick={() => setQrSession(s.name)}
+                                                            className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white transition-all shadow-lg shadow-blue-500/5 group-hover:scale-110"
+                                                            title="Buka QR"
+                                                        >
+                                                            <QrCode className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => {
+                                                            setConfirmModal({
+                                                                show: true,
+                                                                message: `Hapus sesi WhatsApp "${s.name.split('_').slice(1).join('_')}"?`,
+                                                                onConfirm: () => api.post("/whatsapp/logout", { session_name: s.name }).then(fetchWhatsappSessions)
+                                                            });
+                                                        }}
+                                                        className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <button onClick={() => setQrSession(s.name)} className="text-xs text-blue-400"><QrCode className="w-4 h-4" /></button>
+                                    );
+                                })}
+                                {whatsappSessions.length === 0 && (
+                                    <div className="col-span-full py-12 border-2 border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center gap-4 text-center">
+                                        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center">
+                                            <Smartphone className="w-8 h-8 text-slate-600" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-sm font-bold text-slate-300">Belum Ada Sesi WhatsApp</p>
+                                            <p className="text-xs text-slate-500">Tambahkan akun WhatsApp untuk mulai melakukan broadcast.</p>
+                                        </div>
+                                        <button onClick={() => setShowSessionModal(true)} className="bg-emerald-600/10 text-emerald-400 border border-emerald-600/20 px-6 py-2 rounded-xl text-xs font-bold hover:bg-emerald-600 hover:text-white transition-all">Tambah Akun</button>
                                     </div>
-                                ))}
+                                )}
                             </div>
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-6">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h3 className="text-xl font-bold text-white"><MessageSquare className="inline w-5 h-5 text-indigo-500 mr-2" />Templates</h3>
-                                    <button onClick={() => setShowTemplateModal(true)} className="text-xs text-indigo-400">+ New</button>
-                                </div>
-                                <div className="space-y-3 max-h-80 overflow-y-auto">
-                                    {templates.map((t: Template) => (
-                                        <div key={t.id} className="p-4 bg-white/5 rounded-xl group relative">
-                                            <div className="flex justify-between"><h4 className="font-bold text-white text-sm">{t.name}</h4>
-                                                <div className="flex gap-2 opacity-0 group-hover:opacity-100">
-                                                    <button onClick={() => { setInputTemplateName(t.name); setInputTemplateContent(t.content); setEditingTemplateId(t.id); setShowTemplateModal(true); }}><Pencil className="w-3 h-3 text-blue-400" /></button>
-                                                    <button onClick={() => api.delete(`/templates/${t.id}`).then(fetchTemplates)}><Trash2 className="w-3 h-3 text-red-400" /></button>
-                                                </div>
+                            <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-8 space-y-6">
+                                <h3 className="text-xl font-bold text-white flex items-center gap-2"><Send className="text-blue-500 w-5 h-5" /> Blast Configuration</h3>
+
+                                {broadcastStatus.status === 'running' && (
+                                    <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-2xl space-y-4">
+                                        <div className="flex justify-between items-end">
+                                            <div className="space-y-1">
+                                                <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Broadcast Progress</p>
+                                                <h4 className="text-2xl font-black text-white">{broadcastStatus.progress}%</h4>
                                             </div>
-                                            <p className="text-xs text-slate-400 mt-2 line-clamp-2">{t.content}</p>
+                                            <div className="text-right">
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase">Status</p>
+                                                <p className="text-xs font-bold text-white">{broadcastStatus.status.toUpperCase()}</p>
+                                            </div>
                                         </div>
-                                    ))}
+                                        <div className="w-full h-2 bg-blue-500/10 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all duration-500 ease-out"
+                                                style={{ width: `${broadcastStatus.progress}%` }}
+                                            ></div>
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                                                <p className="text-[9px] font-bold text-slate-500 uppercase">Success</p>
+                                                <p className="text-sm font-black text-emerald-400">{broadcastStatus.sent}</p>
+                                            </div>
+                                            <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                                                <p className="text-[9px] font-bold text-slate-500 uppercase">Failed</p>
+                                                <p className="text-sm font-black text-red-400">{broadcastStatus.failed}</p>
+                                            </div>
+                                            <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                                                <p className="text-[9px] font-bold text-slate-500 uppercase">Total</p>
+                                                <p className="text-sm font-black text-white">{broadcastStatus.total}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="space-y-4">
+                                    <label className="block text-sm font-bold text-slate-300">Target Audience</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <button
+                                            onClick={() => setBroadcastTarget('all')}
+                                            className={clsx(
+                                                "p-4 rounded-2xl border transition-all text-left",
+                                                broadcastTarget === 'all' ? "bg-blue-600/20 border-blue-500 text-white shadow-xl shadow-blue-600/10" : "bg-white/5 border-white/5 text-slate-400"
+                                            )}
+                                        >
+                                            <Users className="w-5 h-5 mb-2" />
+                                            <p className="text-sm font-bold">All Contacts</p>
+                                            <p className="text-[10px] opacity-50">Total: {leads.length}</p>
+                                        </button>
+                                        <button
+                                            onClick={() => setBroadcastTarget('verified')}
+                                            className={clsx(
+                                                "p-4 rounded-2xl border transition-all text-left",
+                                                broadcastTarget === 'verified' ? "bg-blue-600/20 border-blue-500 text-white shadow-xl shadow-blue-600/10" : "bg-white/5 border-white/5 text-slate-400"
+                                            )}
+                                        >
+                                            <Smartphone className="w-5 h-5 mb-2" />
+                                            <p className="text-sm font-bold">WA Active Only</p>
+                                            <p className="text-[10px] opacity-50">Total: {leads.filter((l: Lead) => l.status === 'WA Active').length}</p>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-bold text-slate-300">Message Template</label>
+                                    <textarea
+                                        className="w-full bg-black/50 border border-white/10 rounded-2xl p-4 text-white text-sm focus:border-blue-500 outline-none h-40 transition-all font-medium"
+                                        placeholder="Tulis pesan Anda disini... Gunakan {name} untuk personalisasi."
+                                        value={broadcastTemplate}
+                                        onChange={(e) => setBroadcastTemplate(e.target.value)}
+                                        disabled={broadcastStatus.status === 'running'}
+                                    />
+                                    <div className="flex justify-between items-center px-1">
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Spintax & Variables Supported</p>
+                                        <button onClick={() => setShowTemplateModal(true)} className="text-xs text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"><Pencil className="w-3 h-3" /> Save as Template</button>
+                                    </div>
+
+                                    {/* Test Send Section */}
+                                    <div className="mt-4 pt-4 border-t border-white/5">
+                                        <label className="block text-[10px] font-black uppercase text-slate-500 tracking-widest mb-2">Test Broadcast (Safety Check)</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                value={testPhone}
+                                                onChange={e => setTestPhone(e.target.value)}
+                                                placeholder="081234567890"
+                                                className="flex-1 bg-black/20 border border-white/10 rounded-xl px-4 py-2 text-sm text-white outline-none focus:border-blue-500/50"
+                                            />
+                                            <button
+                                                onClick={async () => {
+                                                    if (!testPhone || !broadcastTemplate) return showToast("Phone & Template required", "error");
+                                                    try {
+                                                        const res = await api.post("/broadcast/test", { phone: testPhone, message: broadcastTemplate });
+                                                        showToast(res.data.message, res.data.status === 'success' ? 'success' : 'error');
+                                                    } catch (e: any) {
+                                                        showToast(e.response?.data?.detail || "Send failed", "error");
+                                                    }
+                                                }}
+                                                className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all"
+                                            >
+                                                Test Send
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    {broadcastStatus.status === 'running' ? (
+                                        <button
+                                            onClick={async () => {
+                                                await api.post("/broadcast/stop");
+                                            }}
+                                            className="flex-1 bg-red-500 text-white px-8 py-4 rounded-2xl font-black text-sm shadow-2xl shadow-red-500/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 uppercase tracking-widest"
+                                        >
+                                            <Square className="w-4 h-4" /> Stop Broadcast
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => {
+                                                if (!broadcastTemplate.trim()) {
+                                                    setNoticeModal({ show: true, message: "Template pesan tidak boleh kosong!", type: 'error' });
+                                                    return;
+                                                }
+                                                if (whatsappSessions.filter((s: any) => s.status?.toLowerCase() === 'open' || s.status?.toLowerCase() === 'connected').length === 0) {
+                                                    setNoticeModal({ show: true, message: "Hubungkan minimal satu sesi WhatsApp sebelum mengirim!", type: 'error' });
+                                                    return;
+                                                }
+                                                setConfirmModal({
+                                                    show: true,
+                                                    message: "Konfirmasi mulai pengiriman pesan?",
+                                                    onConfirm: async () => {
+                                                        try {
+                                                            await api.post("/broadcast/start", {
+                                                                template: broadcastTemplate,
+                                                                target: broadcastTarget
+                                                            });
+                                                            setNoticeModal({ show: true, message: "Broadcast dimulai!", type: 'success' });
+                                                        } catch (err: any) {
+                                                            setNoticeModal({ show: true, message: err.response?.data?.detail || "Gagal memulai broadcast", type: 'error' });
+                                                        }
+                                                    }
+                                                });
+                                            }}
+                                            className="flex-1 bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-sm shadow-2xl shadow-blue-600/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 uppercase tracking-widest"
+                                        >
+                                            <Play className="w-4 h-4" /> Start Broadcast
+                                        </button>
+                                    )}
                                 </div>
                             </div>
-                            <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-6 flex flex-col">
-                                <h3 className="text-xl font-bold text-white mb-4"><Zap className="inline w-5 h-5 text-blue-500 mr-2" />Launch</h3>
-                                <select value={target} onChange={e => setTarget(e.target.value)} className="w-full bg-white/5 border border-white/5 rounded-xl p-4 text-white mb-4">
-                                    <option value="verified">Verified WA Only</option><option value="all">All</option>
-                                </select>
-                                <button onClick={handleBroadcast} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-2xl font-black mt-auto">🚀 BROADCAST</button>
+
+                            <div className="bg-slate-900/50 border border-white/5 rounded-3xl p-8 flex flex-col h-full">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-xl font-bold text-white flex items-center gap-2"><LayoutList className="text-blue-500 w-5 h-5" /> Activity Log</h3>
+                                    <div className="flex h-2 w-2 relative">
+                                        {broadcastStatus.status === 'running' && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>}
+                                        <div className={clsx("relative inline-flex rounded-full h-2 w-2", broadcastStatus.status === 'running' ? "bg-blue-500" : "bg-slate-700")}></div>
+                                    </div>
+                                </div>
+                                <div id="broadcast-log-container" className="flex-1 bg-black/40 rounded-2xl p-6 font-mono text-xs text-slate-400 border border-white/5 overflow-y-auto max-h-[500px] scroll-smooth min-h-[300px]">
+                                    {broadcastStatus.logs?.length > 0 ? (
+                                        broadcastStatus.logs.map((log: string, i: number) => {
+                                            const isSent = log.includes('✅');
+                                            const isFailed = log.includes('❌');
+                                            const isWait = log.includes('⏳') || log.includes('⌨️');
+                                            return (
+                                                <div key={i} className={clsx(
+                                                    "mb-2 py-1 px-3 rounded-lg border-l-2",
+                                                    isSent ? "bg-emerald-500/5 border-emerald-500 text-emerald-400" :
+                                                        isFailed ? "bg-red-500/5 border-red-500 text-red-400" :
+                                                            isWait ? "bg-blue-500/5 border-blue-500 text-blue-400" :
+                                                                "bg-white/5 border-transparent text-slate-500"
+                                                )}>
+                                                    {log}
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center opacity-20 italic gap-3">
+                                            <Activity className="w-8 h-8" />
+                                            <p>Belum ada aktivitas broadcast</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -527,21 +838,91 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {/* Confirm Modal */}
-            {confirmModal?.show && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <div className="bg-slate-900 border border-white/10 rounded-3xl p-8 max-w-sm w-full text-center space-y-6">
-                        <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
-                        <h3 className="text-xl font-bold text-white">Konfirmasi</h3>
-                        <p className="text-slate-400 text-sm">{confirmModal.message}</p>
-                        <div className="flex gap-3">
-                            <button onClick={() => setConfirmModal(null)} className="flex-1 bg-white/5 py-3 rounded-xl font-bold">Batal</button>
-                            <button onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold">Ya</button>
+            {/* Preview Modal */}
+            {showPreviewModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+                    <div className="bg-slate-900 border border-white/10 rounded-3xl p-6 max-w-4xl w-full relative max-h-[80vh] flex flex-col">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2"><Table className="w-5 h-5 text-blue-500" /> Data Preview</h3>
+                            <button onClick={() => setShowPreviewModal(false)} className="text-slate-500 hover:text-white"><X className="w-6 h-6" /></button>
+                        </div>
+
+                        <div className="flex-1 overflow-auto border border-white/5 rounded-xl bg-black/40">
+                            {previewLoading ? (
+                                <div className="flex flex-col items-center justify-center h-40 gap-4">
+                                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                                    <p className="text-sm text-slate-500">Loading data...</p>
+                                </div>
+                            ) : previewData ? (
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-white/5 text-slate-400 font-bold sticky top-0">
+                                        <tr>
+                                            {previewData.columns?.map((c: string) => <th key={c} className="p-3">{c}</th>)}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5 text-slate-300">
+                                        {previewData.data?.map((row: any, i: number) => (
+                                            <tr key={i} className="hover:bg-white/5">
+                                                {previewData.columns?.map((c: string) => <td key={c} className="p-3 whitespace-nowrap">{row[c]}</td>)}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="p-10 text-center text-slate-500">Gagal memuat data atau file kosong.</div>
+                            )}
+                        </div>
+                        <div className="mt-4 flex justify-between items-center text-xs text-slate-500">
+                            <p>Previewing first 50 rows only.</p>
+                            <button onClick={() => setShowPreviewModal(false)} className="px-6 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all">Close</button>
                         </div>
                     </div>
                 </div>
             )}
 
-        </div>
+            {/* Confirm Modal */}
+            {
+                confirmModal?.show && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                        <div className="bg-slate-900 border border-white/10 rounded-3xl p-8 max-w-sm w-full text-center space-y-6">
+                            <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
+                            <h3 className="text-xl font-bold text-white">Konfirmasi</h3>
+                            <p className="text-slate-400 text-sm">{confirmModal.message}</p>
+                            <div className="flex gap-3">
+                                <button onClick={() => setConfirmModal(null)} className="flex-1 bg-white/5 py-3 rounded-xl font-bold">Batal</button>
+                                <button onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold">Ya</button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Notice Modal */}
+            {
+                noticeModal.show && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                        <div className="bg-slate-900 border border-white/10 rounded-3xl p-8 max-w-sm w-full text-center space-y-6 animate-in zoom-in-95 duration-200">
+                            <div className={clsx(
+                                "w-16 h-16 rounded-2xl flex items-center justify-center mx-auto",
+                                noticeModal.type === 'success' ? "bg-emerald-500/20 text-emerald-500" : "bg-red-500/20 text-red-500"
+                            )}>
+                                {noticeModal.type === 'success' ? <CheckCircle className="w-8 h-8" /> : <AlertCircle className="w-8 h-8" />}
+                            </div>
+                            <div className="space-y-2">
+                                <h3 className="text-xl font-bold text-white">{noticeModal.type === 'success' ? 'Sukses' : 'Pesan'}</h3>
+                                <p className="text-slate-400 text-sm whitespace-pre-wrap">{noticeModal.message}</p>
+                            </div>
+                            <button
+                                onClick={() => setNoticeModal({ ...noticeModal, show: false })}
+                                className="w-full bg-white/5 py-4 rounded-xl font-bold hover:bg-white/10 transition-colors"
+                            >
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                )
+            }
+
+        </div >
     );
 }
