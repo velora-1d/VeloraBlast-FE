@@ -24,7 +24,7 @@ import {
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 
-const API_URL = "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const NavItem = ({ icon: Icon, label, active, onClick, color = "text-slate-400" }: any) => (
     <button
