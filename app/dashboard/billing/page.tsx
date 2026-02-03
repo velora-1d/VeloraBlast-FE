@@ -13,7 +13,7 @@ import {
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
 
-const API_URL = "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface Package {
     id: number;

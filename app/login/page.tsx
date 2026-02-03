@@ -7,7 +7,7 @@ import { MonitorPlay, Settings, CheckCircle, AlertCircle, ArrowLeft, Eye, EyeOff
 import clsx from "clsx";
 import Link from "next/link";
 
-const API_URL = "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function LoginPage() {
     const router = useRouter();
