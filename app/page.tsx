@@ -15,7 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import clsx from "clsx";
-import { motion, useInView, useSpring, useTransform, useMotionValue } from "framer-motion";
+import { motion, useInView, useSpring, useTransform, useMotionValue, Variants } from "framer-motion";
 
 // --- Animation Components ---
 
@@ -23,7 +23,7 @@ const TypewriterText = ({ text, className, delay = 0 }: { text: string, classNam
   // Split text into words then characters to handle spacing correctly
   const words = text.split(" ");
 
-  const container = {
+  const container: Variants = {
     hidden: { opacity: 0 },
     visible: (i = 1) => ({
       opacity: 1,
@@ -31,7 +31,7 @@ const TypewriterText = ({ text, className, delay = 0 }: { text: string, classNam
     })
   };
 
-  const child = {
+  const child: Variants = {
     visible: {
       opacity: 1,
       y: 0,
@@ -89,7 +89,7 @@ const ScrollReveal = ({ children, className, delay = 0 }: { children: React.Reac
 };
 
 const StaggeredGrid = ({ children, className }: { children: React.ReactNode, className?: string }) => {
-  const container = {
+  const container: Variants = {
     hidden: { opacity: 0 },
     show: {
       opacity: 1,
@@ -113,7 +113,7 @@ const StaggeredGrid = ({ children, className }: { children: React.ReactNode, cla
 };
 
 const ItemReveal = ({ children, className }: { children: React.ReactNode, className?: string }) => {
-  const item = {
+  const item: Variants = {
     hidden: { opacity: 0, y: 30 },
     show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 50 } }
   };
